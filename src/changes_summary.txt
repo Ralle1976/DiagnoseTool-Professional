@@ -1,0 +1,38 @@
+# Änderungen zur Verhinderung der wiederholten SQL-Ausführung
+
+## Problembeschreibung
+Das Problem bestand darin, dass beim Auswählen einer Tabelle aus der ComboBox automatisch ein SQL-Statement generiert und in die EditBox geschrieben wurde, wobei dieses dann unbeabsichtigt mehrfach ausgeführt werden konnte.
+
+## Implementierte Lösung
+
+1. **Neue globale Variablen hinzugefügt**
+   - `$g_bStatementLoaded` - Status-Flag, das anzeigt, ob ein gültiges SQL-Statement bereit zur Ausführung ist
+   - `$g_sLastLoadedTable` - Speichert den Namen der zuletzt geladenen Tabelle, um wiederholte Aktionen bei erneuter Auswahl zu verhindern
+
+2. **Tabellenauswahl-Verhalten geändert**
+   - Bei Auswahl einer neuen Tabelle wird das SQL-Statement generiert und in die EditBox geschrieben
+   - Das Statement wird als "geladen" markiert (`$g_bStatementLoaded = True`), aber NICHT automatisch ausgeführt
+   - Bei wiederholter Auswahl derselben Tabelle wird keine Aktion ausgelöst
+   - Der Benutzer erhält klare Feedback-Meldungen zum Status des Statements
+
+3. **Ausführungs-Button-Logik verbessert**
+   - Der "Ausführen"-Button führt das Statement nur aus, wenn es als "geladen" markiert ist
+   - Nach der Ausführung wird der Status zurückgesetzt, um weitere unbeabsichtigte Ausführungen zu verhindern
+   - Der Button wird kurzzeitig deaktiviert (500ms), um versehentliches Mehrfachklicken zu verhindern
+   - Verbesserte Feedback-Meldungen für den Benutzer
+
+4. **Refresh-Button-Verhalten angepasst**
+   - Der Refresh-Button wurde so angepasst, dass er konsistent mit dem "Ausführen"-Button arbeitet
+   - Bei Klick auf "Refresh" wird das aktuelle Statement als "geladen" markiert, ausgeführt und dann zurückgesetzt
+
+5. **SQL-Editor Initialisierung angepasst**
+   - Beim Öffnen des SQL-Editors werden die Status-Variablen zurückgesetzt
+   - Dadurch wird verhindert, dass alte Statements ohne explizite Benutzeraktion ausgeführt werden
+
+## Moduskonzept
+Das implementierte Moduskonzept unterscheidet klar zwischen:
+- **Auswahlmodus**: Benutzer wählt eine Tabelle aus, SQL-Statement wird vorbereitet
+- **Editormodus**: Benutzer kann das Statement anpassen und explizit ausführen
+
+## Backup
+Eine Sicherungskopie der ursprünglichen Datei wurde als sql_editor_simple.au3.bak angelegt.

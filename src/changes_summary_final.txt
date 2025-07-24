@@ -1,0 +1,48 @@
+# Korrigierte Lösung für das SQL-Editor-Problem
+
+## Problembeschreibung
+Das Problem bestand darin, dass bei Auswahl einer Tabelle in der ComboBox unerwünschte automatische SQL-Ausführungen stattfanden. Das gewünschte Verhalten ist:
+
+1. Bei Auswahl einer Tabelle in der ComboBox:
+   - SQL-Statement erzeugen und EINMALIG direkt ausführen
+   - Das Statement anschließend in die EditBox schreiben
+   - KEINE weitere automatische Ausführung des Statements
+
+2. Nachfolgende Ausführungen:
+   - NUR bei explizitem Klick auf "Ausführen (F5)" oder Refresh-Button
+   - Es soll immer der aktuelle Inhalt der EditBox ausgeführt werden
+
+## Implementierte Lösung
+
+1. **ComboBox-Auswahl-Verhalten geändert**
+   - Bei Tabellen-Auswahl wird das SQL-Statement erstellt
+   - Das Statement wird DIREKT einmalig ausgeführt (ohne Zwischenschritt über die EditBox)
+   - Nach der Ausführung wird das Statement in die EditBox geschrieben
+   - Keine automatische weitere Ausführung
+
+2. **Ausführungs-Button**
+   - Führt immer nur genau den aktuellen Inhalt der EditBox aus
+   - Wird nur bei explizitem Klick aktiv
+   - Keine Überprüfung eines "geladenen" Status mehr, da dieser nicht mehr benötigt wird
+   - Kurze Deaktivierung nach dem Klick, um versehentliches Mehrfachklicken zu verhindern
+
+3. **Refresh-Button**
+   - Verhält sich analog zum Ausführen-Button
+   - Führt den aktuellen Inhalt der EditBox aus
+
+4. **Syntax-Highlighting**
+   - Bei Änderungen am SQL-Text in der EditBox wird das Syntax-Highlighting aktualisiert
+   - Die Änderungen werden nicht automatisch ausgeführt
+
+5. **Vereinfachtes Status-Management**
+   - Die komplexe Status-Verwaltung mit `$g_bStatementLoaded` und `$g_sLastLoadedTable` wurde entfernt
+   - Die Steuerung erfolgt nun klar und direkt durch die Benutzeraktionen:
+     * Tabellenwechsel → Ausführung + EditBox-Aktualisierung
+     * Ausführen-Button → Ausführung des aktuellen EditBox-Inhalts
+
+## Zusammenfassung des Verhaltens
+- Bei Tabellenwechsel: Direkte Ausführung und Anzeige in der EditBox
+- Danach: NUR manuelle Ausführung durch Klick auf "Ausführen" oder "Refresh"
+- Textänderungen in der EditBox: Nur Syntax-Highlighting, keine automatische Ausführung
+
+Diese Lösung bietet ein klares, vorhersehbares Verhalten ohne unbeabsichtigte Mehrfachausführungen von SQL-Statements.

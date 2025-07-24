@@ -1,0 +1,686 @@
+; ===============================================================================================================================
+; Titel.......: SQL-Editor-Einfach
+; Beschreibung: Vereinfachte Lösung für das Problem mit der automatischen SQL-Ausführung
+; Autor.......: Ralle1976
+; Erstellt....: 2025-04-12
+; ===============================================================================================================================
+
+#include-once
+#include <SQLite.au3>
+#include <GuiListView.au3>
+#include <GUIRichEdit.au3>
+#include <StringConstants.au3>
+#include <GUIConstantsEx.au3>
+#include <WinAPI.au3>
+#include <Array.au3>
+
+; Referenzen auf die vorhandenen Implementierungen
+#include "constants.au3"    ; Globale Konstanten
+#include "globals.au3"      ; Globale Variablen
+#include "logging.au3"      ; Logging-Funktionen
+#include "error_handler.au3" ; Fehlerbehandlung
+
+; Höhe des SQL-Editor-Panels
+Global Const $SQL_EDITOR_HEIGHT = 200
+
+; Globale Variablen für den integrierten SQL-Editor
+Global $g_idSQLEditorPanel = 0        ; ID des Panel-Containers
+Global $g_hSQLRichEdit = 0            ; Handle des RichEdit-Controls
+Global $g_idSQLDbCombo = 0            ; ID der Datenbank-Auswahlbox
+Global $g_idSQLTableCombo = 0         ; ID der Tabellen-Auswahlbox
+Global $g_idSQLExecuteBtn = 0         ; ID des Buttons zum Ausführen von Abfragen
+Global $g_idSQLSaveBtn = 0            ; ID des Buttons zum Speichern einer SQL-Abfrage
+Global $g_idSQLLoadBtn = 0            ; ID des Buttons zum Laden einer SQL-Abfrage
+Global $g_idSQLBackBtn = 0            ; ID des Buttons zum Zurückkehren zur normalen Ansicht
+Global $g_idBtnRefresh = 0            ; ID des Refresh-Buttons
+Global $g_idBtnSQLEditor = 0          ; ID des SQL-Editor-Buttons
+Global $g_bSQLEditorMode = False      ; Flag, ob der SQL-Editor-Modus aktiv ist
+Global $g_bSQLExecutionLock = False   ; KRITISCH: Verhindert unbeabsichtigte Ausführungen
+Global $g_bStatementLoaded = False    ; NEU: Status-Flag für geladenes SQL-Statement
+Global $g_sLastLoadedTable = ""       ; NEU: Speichert den Namen der letzten geladenen Tabelle
+Global $g_aListViewBackup[0][0]       ; Array zum Speichern des ListView-Zustands vor SQL-Editor-Aktivierung
+Global $g_aListViewColBackup = 0      ; Array zum Speichern der Spaltenüberschriften
+Global $g_iOrigListViewHeight = 0     ; Ursprüngliche Höhe der ListView
+Global $g_iOrigListViewTop = 0        ; Ursprüngliche Y-Position der ListView
+Global $g_aTableColumns[0]            ; Spalten der aktuell ausgewählten Tabelle
+Global $g_idAutoCompleteList = 0      ; ID der Auto-Vervollständigungsliste
+Global $g_hAutoCompleteList = 0       ; Handle der Auto-Vervollständigungsliste
+Global $g_sLastDir = @ScriptDir       ; Letztes Verzeichnis für Dateidialoge
+
+; Hilffunktion zum Setzen von Log-Meldungen mit begrenzter Häufigkeit
+Func _LogLimit($sText, $iLimitCount = 10)
+    Static $aLogCount[1][2] = [[0, ""]] ; Speichert Count und letzte Nachricht
+
+    ; Prüfen, ob die Nachricht bereits bekannt ist
+    Local $iIndex = -1
+    For $i = 0 To UBound($aLogCount) - 1
+        If $aLogCount[$i][1] = $sText Then
+            $iIndex = $i
+            ExitLoop
+        EndIf
+    Next
+
+    ; Wenn nicht gefunden, neue Nachricht hinzufügen
+    If $iIndex = -1 Then
+        Local $iCount = UBound($aLogCount)
+        ReDim $aLogCount[$iCount + 1][2]
+        $aLogCount[$iCount][0] = 0
+        $aLogCount[$iCount][1] = $sText
+        $iIndex = $iCount
+    EndIf
+
+    ; Zähler erhöhen
+    $aLogCount[$iIndex][0] += 1
+
+    ; Nur jede N-te Nachricht loggen
+    If Mod($aLogCount[$iIndex][0], $iLimitCount) = 0 Then
+        _LogInfo($sText & " (wiederholte Nachricht " & $aLogCount[$iIndex][0] & " mal)")
+        Return True
+    EndIf
+
+    ; Erste Nachricht immer loggen
+    If $aLogCount[$iIndex][0] = 1 Then
+        _LogInfo($sText)
+        Return True
+    EndIf
+
+    Return False
+EndFunc
+
+; ===============================================================================================================================
+; STARK VEREINFACHTE SQL-EDITOR IMPLEMENTATION
+; Ziel: Minimalismus, keine automatischen Ausführungen
+; ===============================================================================================================================
+
+; Einfache Implementierung für Syntax-Highlighting
+Func _SQL_UpdateSyntaxHighlighting()
+    ; In dieser vereinfachten Version ist das nur ein Platzhalter
+    ; Das eigentliche Syntax-Highlighting könnte in einer zukünftigen Version implementiert werden
+    _LogLimit("Syntax-Highlighting aktualisiert", 50)
+EndFunc
+
+; Status-Meldung setzen
+Func _SetStatus($sText)
+    If $g_idStatus <> 0 Then
+        _LogLimit("Status: " & $sText, 20)
+        GUICtrlSetData($g_idStatus, $sText)
+    EndIf
+EndFunc
+
+; Funktion zum Ermitteln der Spalten einer Tabelle
+Func _GetTableColumns($sDBPath, $sTable)
+    Local $aColumns[0]
+    If $sDBPath = "" Or $sTable = "" Then Return $aColumns
+
+    ; Datenbank öffnen
+    Local $hDB = _SQLite_Open($sDBPath)
+    If @error Then Return $aColumns
+
+    ; PRAGMA-Befehl ausführen, um Tabellenspalten zu erhalten
+    Local $aResult, $iRows, $iColumns
+    Local $sSQL = "PRAGMA table_info(" & $sTable & ");"
+    Local $iRet = _SQLite_GetTable2d($hDB, $sSQL, $aResult, $iRows, $iColumns)
+    _SQLite_Close($hDB)
+
+    If @error Or $iRet <> $SQLITE_OK Or $iRows = 0 Then Return $aColumns
+
+    ; Spaltennamen aus Ergebnis extrahieren
+    ReDim $aColumns[$iRows]
+    For $i = 1 To $iRows
+        $aColumns[$i-1] = $aResult[$i][1] ; Spalte 1 (Index 1) enthält den Spaltennamen
+    Next
+
+    Return $aColumns
+EndFunc
+
+; Funktion zum Löschen aller ListView-Spalten
+;~ Func _DeleteAllListViewColumns($idListView)
+;~     Local $hListView = GUICtrlGetHandle($idListView)
+;~     Local $iColumns = _GUICtrlListView_GetColumnCount($hListView)
+;~
+;~     ; Spalten von rechts nach links löschen
+;~     For $i = $iColumns - 1 To 0 Step -1
+;~         _GUICtrlListView_DeleteColumn($hListView, $i)
+;~     Next
+;~
+;~     Return True
+;~ EndFunc
+
+; Funktion zum Laden der Tabellen aus einer Datenbank
+Func _SQL_LoadTables($sDBPath)
+    If $sDBPath = "" Then Return False
+
+    ; Datenbank öffnen
+    Local $hDB = _SQLite_Open($sDBPath)
+    If @error Then Return False
+
+    ; Tabellenliste abfragen
+    Local $aResult, $iRows, $iColumns
+    Local $sSQL = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+    Local $iRet = _SQLite_GetTable2d($hDB, $sSQL, $aResult, $iRows, $iColumns)
+    _SQLite_Close($hDB)
+
+    ; Liste leeren
+    GUICtrlSetData($g_idSQLTableCombo, "")
+
+    If @error Or $iRet <> $SQLITE_OK Or $iRows = 0 Then Return False
+
+    ; Tabellen zur Combo hinzufügen
+    Local $sTableList = ""
+    For $i = 1 To $iRows
+        $sTableList &= $aResult[$i][0] & "|"
+    Next
+    GUICtrlSetData($g_idSQLTableCombo, StringTrimRight($sTableList, 1))
+
+    ; Erste Tabelle auswählen
+    If $iRows > 0 Then GUICtrlSetData($g_idSQLTableCombo, $aResult[1][0], $aResult[1][0])
+
+    Return True
+EndFunc
+
+; Funktion zum Laden der verfügbaren Datenbanken
+Func _SQL_LoadDatabases()
+    ; Aktuell ausgewählten Eintrag merken
+    Local $sCurrentDB = GUICtrlRead($g_idSQLDbCombo)
+
+    ; Liste leeren
+    GUICtrlSetData($g_idSQLDbCombo, "")
+
+    ; SQLite-Datenbankdateien im Programmverzeichnis suchen
+    Local $aDBFiles = _FileListToArray(@ScriptDir, "*.db;*.db3;*.sqlite;*.sqlite3", $FLTA_FILES)
+    If Not @error Then
+        ; Datenbankdateien zur Combo hinzufügen
+        Local $sDBList = ""
+        For $i = 1 To $aDBFiles[0]
+            $sDBList &= @ScriptDir & "\" & $aDBFiles[$i] & "|"
+        Next
+        GUICtrlSetData($g_idSQLDbCombo, StringTrimRight($sDBList, 1))
+    EndIf
+
+    ; Extraktionsverzeichnis durchsuchen, falls vorhanden
+    If $g_sExtractDir <> "" And FileExists($g_sExtractDir) Then
+        Local $aExtractDBFiles = _FileListToArray($g_sExtractDir, "*.db;*.db3;*.sqlite;*.sqlite3", $FLTA_FILES, True)
+        If Not @error Then
+            Local $sExtractDBList = ""
+            For $i = 1 To $aExtractDBFiles[0]
+                $sExtractDBList &= $aExtractDBFiles[$i] & "|"
+            Next
+            GUICtrlSetData($g_idSQLDbCombo, StringTrimRight($sExtractDBList, 1))
+        EndIf
+    EndIf
+
+    ; Falls aktuell ausgewählte Datenbank vorhanden, wieder auswählen
+    If $sCurrentDB <> "" Then GUICtrlSetData($g_idSQLDbCombo, $sCurrentDB, $sCurrentDB)
+
+    Return True
+EndFunc
+
+; Funktion zum Speichern des ListView-Status
+Func _SQL_SaveListViewState()
+    Local $hListView = GUICtrlGetHandle($g_idListView)
+    Local $iItems = _GUICtrlListView_GetItemCount($hListView)
+    Local $iColumns = _GUICtrlListView_GetColumnCount($hListView)
+
+    ; Spaltenüberschriften speichern
+    Local $aColInfo[$iColumns][2]
+    For $i = 0 To $iColumns - 1
+        Local $aColTemp = _GUICtrlListView_GetColumn($hListView, $i)
+        $aColInfo[$i][0] = $aColTemp[5]  ; Text
+        $aColInfo[$i][1] = _GUICtrlListView_GetColumnWidth($hListView, $i)  ; Breite
+    Next
+    $g_aListViewColBackup = $aColInfo
+
+    ; Daten speichern
+    Local $aData[$iItems][$iColumns]
+    For $i = 0 To $iItems - 1
+        For $j = 0 To $iColumns - 1
+            $aData[$i][$j] = _GUICtrlListView_GetItemText($hListView, $i, $j)
+        Next
+    Next
+    $g_aListViewBackup = $aData
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _SQL_ExecuteQuery
+; Beschreibung: Führt eine SQL-Abfrage aus und zeigt Ergebnisse in der ListView an
+; Parameter.: $sSQL - SQL-Abfrage
+;             $sDBPath - Pfad zur Datenbank
+; Rückgabe..: True bei Erfolg, False bei Fehler
+; ===============================================================================================================================
+Func _SQL_ExecuteQuery($sSQL, $sDBPath)
+; WICHTIG: Diese Funktion ist der zentrale Punkt für SQL-Ausführungen
+; Sie sollte NUR direkt vom Execute-Button oder Refresh-Button aufgerufen werden
+
+; Prüfung deaktiviert, da wir kurz vor dem Aufruf die Sperre explizit aufheben
+;If $g_bSQLExecutionLock Then
+;    _LogLimit("SQL-Ausführung blockiert: Sperre aktiv")
+;    Return False
+;EndIf
+
+; Klare Protokollierung der Ausführung
+_LogInfo("**********************************************************")
+_LogInfo("* MANUELL AUSGELÖSTE SQL-AUSFÜHRUNG - BEGINN             *")
+_LogInfo("**********************************************************")
+
+; Basisdaten prüfen
+If $sDBPath = "" Then
+    _LogInfo("SQL-Ausführung fehlgeschlagen: Keine Datenbank angegeben")
+    _SetStatus("Fehler: Keine Datenbank ausgewählt")
+    Return False
+EndIf
+
+If $sSQL = "" Then
+    _LogInfo("SQL-Ausführung fehlgeschlagen: Keine SQL-Anweisung angegeben")
+    _SetStatus("Fehler: Keine SQL-Anweisung eingegeben")
+    Return False
+EndIf
+
+_LogInfo("SQL-Text: " & StringLeft($sSQL, 500) & "...")
+_LogInfo("Datenbank: " & $sDBPath)
+
+; SQL verarbeiten
+Local $hDB = _SQLite_Open($sDBPath)
+If @error Then
+_LogInfo("Fehler beim Öffnen der Datenbank: " & @error)
+_SetStatus("Fehler beim Öffnen der Datenbank")
+Return False
+EndIf
+
+; Für SELECT-Abfragen
+If StringRegExp(StringUpper(StringStripWS($sSQL, 3)), "^\s*SELECT") Then
+Local $aResult, $iRows, $iColumns
+_LogInfo("SQL-Abfrage ist ein SELECT - führe aus...")
+
+Local $iRet = _SQLite_GetTable2d($hDB, $sSQL, $aResult, $iRows, $iColumns)
+_SQLite_Close($hDB)
+
+If @error Or $iRet <> $SQLITE_OK Then
+    _LogInfo("SQL-Fehler: " & _SQLite_ErrMsg())
+    _SetStatus("SQL-Fehler: " & _SQLite_ErrMsg())
+    Return False
+EndIf
+
+_LogInfo("SELECT-Abfrage erfolgreich ausgeführt: " & $iRows & " Zeilen, " & $iColumns & " Spalten")
+
+; ListView leeren
+_LogInfo("Lösche bisherige Daten in der ListView")
+_GUICtrlListView_DeleteAllItems($g_idListView)
+_DeleteAllListViewColumns($g_idListView)
+
+; Keine Ergebnisse? Dann nur Meldung
+If $iRows = 0 Then
+    _LogInfo("Keine Ergebnisse für diese Abfrage")
+    _SetStatus("Abfrage erfolgreich ausgeführt - keine Ergebnisse")
+    Return True
+EndIf
+
+; Spalten hinzufügen
+_LogInfo("Füge " & $iColumns & " Spalten zur ListView hinzu")
+For $i = 0 To $iColumns - 1
+    _GUICtrlListView_AddColumn($g_idListView, $aResult[0][$i], 100)
+Next
+
+; Daten hinzufügen
+_LogInfo("Füge " & $iRows & " Datenzeilen zur ListView hinzu")
+For $i = 1 To $iRows
+        Local $iIndex = _GUICtrlListView_AddItem($g_idListView, $aResult[$i][0])
+        For $j = 1 To $iColumns - 1
+            _GUICtrlListView_AddSubItem($g_idListView, $iIndex, $aResult[$i][$j], $j)
+        Next
+    Next
+
+        ; Spaltenbreiten anpassen
+        For $i = 0 To $iColumns - 1
+            _GUICtrlListView_SetColumnWidth($g_idListView, $i, $LVSCW_AUTOSIZE_USEHEADER)
+        Next
+
+        ; ListView aktualisieren
+        _LogInfo("Aktualisiere ListView-Anzeige")
+        GUICtrlSetState($g_idListView, $GUI_SHOW)
+        _WinAPI_RedrawWindow(GUICtrlGetHandle($g_idListView))
+        _SetStatus("Abfrage erfolgreich ausgeführt: " & $iRows & " Zeilen gefunden")
+    Else
+        ; Für Nicht-SELECT-Abfragen
+        _LogInfo("SQL-Anweisung ist kein SELECT - führe aus...")
+        Local $iRet = _SQLite_Exec($hDB, $sSQL)
+        Local $iChanges = _SQLite_Changes($hDB)
+        _SQLite_Close($hDB)
+
+        If @error Or $iRet <> $SQLITE_OK Then
+            _LogInfo("SQL-Fehler: " & _SQLite_ErrMsg())
+            _SetStatus("SQL-Fehler: " & _SQLite_ErrMsg())
+            Return False
+        EndIf
+
+        _LogInfo("Nicht-SELECT-Anweisung erfolgreich ausgeführt: " & $iChanges & " Zeilen betroffen")
+        _SetStatus("Anweisung erfolgreich ausgeführt: " & $iChanges & " Zeilen betroffen")
+    EndIf
+
+    _LogInfo("**********************************************************")
+    _LogInfo("* MANUELL AUSGELÖSTE SQL-AUSFÜHRUNG - ENDE               *")
+    _LogInfo("**********************************************************")
+    Return True
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _InitSQLEditorIntegrated
+; Beschreibung: Initialisiert den integrierten SQL-Editor im Hauptfenster
+; Parameter.: $hGUI - Handle des Hauptfensters
+;             $x, $y - Position des SQL-Editor-Panels
+;             $w - Breite
+;             $h - Höhe
+; Rückgabe..: True bei Erfolg
+; ===============================================================================================================================
+Func _InitSQLEditorIntegrated($hGUI, $x, $y, $w, $h)
+    ; Globale Variablen initialisieren
+    $g_bSQLEditorMode = False  ; Standardmäßig ist der SQL-Editor deaktiviert
+    $g_bSQLExecutionLock = False  ; Keine Sperre beim Start
+
+    ; Ursprüngliche Position und Größe der ListView speichern
+    Local $aListViewPos = ControlGetPos($hGUI, "", $g_idListView)
+    $g_iOrigListViewTop = $aListViewPos[1]
+    $g_iOrigListViewHeight = $aListViewPos[3]
+
+    ; Panel erstellen (anfangs ausgeblendet)
+    $g_idSQLEditorPanel = GUICtrlCreateGroup("SQL-Editor", $x, $y, $w, $SQL_EDITOR_HEIGHT)
+    GUICtrlSetState($g_idSQLEditorPanel, $GUI_HIDE)
+
+    ; Abstand der Steuerelemente vom Rand des Panels
+    Local $iMargin = 10
+    Local $xCtrl = $x + $iMargin
+    Local $yCtrl = $y + 20 ; Berücksichtige Höhe der Gruppenüberschrift
+    Local $wCtrl = $w - 2 * $iMargin
+
+    ; Dropdown-Menüs für Datenbanken und Tabellen
+    GUICtrlCreateLabel("Datenbank:", $xCtrl, $yCtrl, 80, 20)
+    $g_idSQLDbCombo = GUICtrlCreateCombo("", $xCtrl + 85, $yCtrl, 200, 20)
+    GUICtrlCreateLabel("Tabelle:", $xCtrl + 300, $yCtrl, 80, 20)
+    $g_idSQLTableCombo = GUICtrlCreateCombo("", $xCtrl + 385, $yCtrl, 200, 20)
+
+    ; RichEdit-Control für SQL-Eingabe
+    $yCtrl += 30
+    $g_hSQLRichEdit = _GUICtrlRichEdit_Create($hGUI, "", $xCtrl, $yCtrl, $wCtrl, 100, BitOR($ES_MULTILINE, $WS_VSCROLL, $ES_WANTRETURN))
+    _GUICtrlRichEdit_SetFont($g_hSQLRichEdit, 10, "Consolas")
+
+    ; Auto-Vervollständigungsliste vorbereiten (anfangs ausgeblendet)
+    $g_idAutoCompleteList = GUICtrlCreateList("", $xCtrl, $yCtrl + 50, 200, 80)
+    $g_hAutoCompleteList = GUICtrlGetHandle($g_idAutoCompleteList)
+    GUICtrlSetState($g_idAutoCompleteList, $GUI_HIDE)
+
+    ; Buttons
+    $yCtrl += 110
+    ; Button für Ausführung
+    $g_idSQLExecuteBtn = GUICtrlCreateButton("Ausführen (F5)", $xCtrl, $yCtrl, 150, 30)
+
+    $g_idSQLSaveBtn = GUICtrlCreateButton("Speichern", $xCtrl + 160, $yCtrl, 100, 30)
+    $g_idSQLLoadBtn = GUICtrlCreateButton("Laden", $xCtrl + 270, $yCtrl, 100, 30)
+    $g_idSQLBackBtn = GUICtrlCreateButton("Zurück", $xCtrl + $wCtrl - 100, $yCtrl, 100, 30)
+
+    ; Panel abschließen
+    GUICtrlCreateGroup("", -99, -99, 1, 1) ; Dummy-Gruppe zum Schließen
+    Return True
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _HandleSQLEditorEvents
+; Beschreibung: Verarbeitet Events für den SQL-Editor-Modus
+; Parameter.: $iMsg - Event-ID aus GUIGetMsg
+; Rückgabe..: True wenn Event verarbeitet wurde, sonst False
+; ===============================================================================================================================
+Func _HandleSQLEditorEvents($iMsg)
+    ; Wenn SQL-Editor nicht aktiv, keine Events behandeln
+    If Not $g_bSQLEditorMode Then Return False
+
+    Switch $iMsg
+        Case $g_idSQLDbCombo
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+            Local $sDBPath = GUICtrlRead($g_idSQLDbCombo)
+            If $sDBPath <> "" Then
+                _SQL_LoadTables($sDBPath)  ; Tabellen laden, keine SQL-Ausführung
+            EndIf
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+
+        Case $g_idSQLTableCombo
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+            Local $sTable = GUICtrlRead($g_idSQLTableCombo)
+            
+            ; Prüfen, ob es sich um eine neue Tabellenauswahl handelt
+            If $sTable <> "" And $sTable <> $g_sLastLoadedTable Then
+                _LogInfo("Neue Tabelle ausgewählt: " & $sTable & " (vorher: " & $g_sLastLoadedTable & ")")
+                
+                ; SQL-Text OHNE Ausführung setzen
+                Local $sSQL = "-- Klicken Sie auf 'Ausführen (F5)', um diese Abfrage auszuführen" & @CRLF & @CRLF & _
+                           "SELECT * FROM " & $sTable & " LIMIT 100;"
+                _GUICtrlRichEdit_SetText($g_hSQLRichEdit, $sSQL)
+                $g_sCurrentTable = $sTable
+                $g_sLastLoadedTable = $sTable  ; Aktuell geladene Tabelle speichern
+                
+                ; Statement als geladen markieren, aber nicht automatisch ausführen
+                $g_bStatementLoaded = True
+                _SetStatus("SQL-Statement für Tabelle '" & $sTable & "' erstellt. Klicken Sie auf 'Ausführen' zum Starten.")
+            ElseIf $sTable = $g_sLastLoadedTable And $g_bStatementLoaded Then
+                ; Keine Aktion, wenn dieselbe Tabelle erneut ausgewählt wird und ein Statement bereits geladen ist
+                _LogInfo("Wiederholte Auswahl der gleichen Tabelle ignoriert: " & $sTable)
+            EndIf
+            
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+
+        Case $g_idSQLExecuteBtn
+            _LogInfo("######## EXECUTE-BUTTON MANUELL GEDRÜCKT ########")
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+
+            ; SQL-Text laden
+            Local $sSQL = _GUICtrlRichEdit_GetText($g_hSQLRichEdit)
+            Local $sDBPath = GUICtrlRead($g_idSQLDbCombo)
+
+            ; Prüfen, ob ein gültiges SQL-Statement geladen ist
+            If $g_bStatementLoaded And $sSQL <> "" And $sDBPath <> "" Then
+                _LogInfo("SQL-Ausführung wird gestartet durch Button-Klick - Statement ist geladen")
+                _SetStatus("Führe SQL aus...")
+
+                ; Sperre kurz aufheben für die Ausführung
+                $g_bSQLExecutionLock = False
+                _SQL_ExecuteQuery($sSQL, $sDBPath)  ; Explizit ausgelöst
+                $g_bSQLExecutionLock = True
+
+                ; Statement als ausgeführt markieren
+                $g_bStatementLoaded = False
+                _LogInfo("SQL-Statement wurde ausgeführt - Status zurückgesetzt")
+                _SetStatus("SQL-Ausführung abgeschlossen - Für weitere Ausführungen neue Tabelle wählen oder Ausführen-Button erneut drücken")
+                
+                ; Optional: Button kurzzeitig deaktivieren, um versehentliches Mehrfachklicken zu verhindern
+                GUICtrlSetState($g_idSQLExecuteBtn, $GUI_DISABLE)
+                Sleep(500) ; Kurze Verzögerung
+                GUICtrlSetState($g_idSQLExecuteBtn, $GUI_ENABLE)
+            Else
+                If Not $g_bStatementLoaded Then
+                    _SetStatus("Fehler: Kein gültiges SQL-Statement geladen")
+                    _LogInfo("SQL-Ausführung fehlgeschlagen: Kein gültiges Statement geladen")
+                    
+                    ; Automatisch Status zurücksetzen, damit neue Eingabe möglich ist
+                    $g_bStatementLoaded = True
+                Else
+                    _SetStatus("Fehler: SQL oder Datenbank fehlt")
+                EndIf
+            EndIf
+
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+
+        Case $g_idBtnRefresh
+            _LogInfo("######## REFRESH-BUTTON MANUELL GEDRÜCKT ########")
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+
+            ; SQL-Text laden
+            Local $sSQL = _GUICtrlRichEdit_GetText($g_hSQLRichEdit)
+            Local $sDBPath = GUICtrlRead($g_idSQLDbCombo)
+
+            ; Refresh aktiviert immer die Ausführung des aktuellen Statements (UI-Konsistenz)
+            If $sSQL <> "" And $sDBPath <> "" Then
+                _LogInfo("SQL-Refresh wird gestartet durch Button-Klick - erzwinge Ausführung")
+                _SetStatus("Führe SQL-Refresh aus...")
+
+                ; Aktiviere das Statement, falls nicht schon aktiv
+                $g_bStatementLoaded = True
+
+                ; Sperre kurz aufheben für die Ausführung
+                $g_bSQLExecutionLock = False
+                _SQL_ExecuteQuery($sSQL, $sDBPath)  ; Explizit ausgelöst
+                $g_bSQLExecutionLock = True
+
+                ; Statement als ausgeführt markieren
+                $g_bStatementLoaded = False
+                _LogInfo("SQL-Statement wurde durch Refresh ausgeführt - Status zurückgesetzt")
+                _SetStatus("SQL-Refresh abgeschlossen - Für neue Ausführungen bitte neue Tabelle wählen")
+            Else
+                _SetStatus("Fehler: SQL oder Datenbank fehlt")
+            EndIf
+
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+
+        Case $g_idSQLBackBtn, $g_idBtnSQLEditor
+            _SQL_EditorExit()  ; SQL-Editor verlassen
+            Return True
+
+        Case $g_idSQLSaveBtn
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+            Local $sSQL = _GUICtrlRichEdit_GetText($g_hSQLRichEdit)
+            If $sSQL <> "" Then
+                Local $sFile = FileSaveDialog("SQL-Abfrage speichern", $g_sLastDir, "SQL-Dateien (*.sql)", $FD_PATHMUSTEXIST)
+                If Not @error Then
+                    If StringRight($sFile, 4) <> ".sql" Then $sFile &= ".sql"
+                    FileWrite($sFile, $sSQL)
+                EndIf
+            EndIf
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+
+        Case $g_idSQLLoadBtn
+            $g_bSQLExecutionLock = True  ; Sperre aktivieren
+            Local $sFile = FileOpenDialog("SQL-Abfrage laden", $g_sLastDir, "SQL-Dateien (*.sql)", $FD_FILEMUSTEXIST)
+            If Not @error Then
+                Local $sSQL = FileRead($sFile)
+                If Not @error Then _GUICtrlRichEdit_SetText($g_hSQLRichEdit, $sSQL)
+            EndIf
+            $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+            Return True
+    EndSwitch
+
+    Return False
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _SQL_EditorEnter
+; Beschreibung: Aktiviert den SQL-Editor-Modus
+; Parameter.: Keine
+; Rückgabe..: True bei Erfolg, sonst False
+; ===============================================================================================================================
+Func _SQL_EditorEnter()
+    ; Statusvariablen zurücksetzen
+    $g_bStatementLoaded = False
+    $g_sLastLoadedTable = ""
+    ; Aktiviert den SQL-Editor-Modus
+    If $g_bSQLEditorMode Then Return True  ; Bereits aktiv
+
+    $g_bSQLExecutionLock = True  ; Sperre aktivieren
+
+    ; ListView-Status speichern
+    _SQL_SaveListViewState()
+
+    ; Button-Text ändern
+    GUICtrlSetData($g_idBtnSQLEditor, "Zurück")
+
+    ; SQL-Editor-Panel anzeigen
+    GUICtrlSetState($g_idSQLEditorPanel, $GUI_SHOW)
+
+    ; ListView anpassen
+    Local $aPos = ControlGetPos($g_hGUI, "", $g_idListView)
+    ControlMove($g_hGUI, "", $g_idListView, $aPos[0], $g_iOrigListViewTop + $SQL_EDITOR_HEIGHT, $aPos[2], $g_iOrigListViewHeight - $SQL_EDITOR_HEIGHT)
+    GUICtrlSetState($g_idListView, $GUI_SHOW)
+
+    ; Datenbanken und Tabellen laden
+    _SQL_LoadDatabases()
+    If $g_sCurrentDB <> "" Then
+        GUICtrlSetData($g_idSQLDbCombo, $g_sCurrentDB, $g_sCurrentDB)
+        _SQL_LoadTables($g_sCurrentDB)
+
+        ; Standard-SQL setzen
+        Local $sCurrentTable = GUICtrlRead($idTableCombo)
+        If $sCurrentTable <> "" Then
+            GUICtrlSetData($g_idSQLTableCombo, $sCurrentTable, $sCurrentTable)
+            _GUICtrlRichEdit_SetText($g_hSQLRichEdit, "-- Klicken Sie auf 'Ausführen (F5)', um diese Abfrage auszuführen" & @CRLF & @CRLF & _
+                                     "SELECT * FROM " & $sCurrentTable & " LIMIT 100;")
+            $g_sCurrentTable = $sCurrentTable
+        EndIf
+    EndIf
+
+    ; SQL-Editor-Modus aktivieren
+    $g_bSQLEditorMode = True
+
+    $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+    Return True
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _SQL_EditorExit
+; Beschreibung: Deaktiviert den SQL-Editor-Modus
+; Parameter.: Keine
+; Rückgabe..: True bei Erfolg, sonst False
+; ===============================================================================================================================
+Func _SQL_EditorExit()
+    ; Deaktiviert den SQL-Editor-Modus
+    If Not $g_bSQLEditorMode Then Return True  ; Nicht aktiv
+
+    $g_bSQLExecutionLock = True  ; Sperre aktivieren
+
+    ; Button-Text zurücksetzen
+    GUICtrlSetData($g_idBtnSQLEditor, "SQL-Editor")
+
+    ; SQL-Editor-Panel ausblenden
+    GUICtrlSetState($g_idSQLEditorPanel, $GUI_HIDE)
+
+    ; Auto-Vervollständigung ausblenden
+    GUICtrlSetState($g_idAutoCompleteList, $GUI_HIDE)
+
+    ; ListView zurücksetzen
+    ControlMove($g_hGUI, "", $g_idListView, 2, $g_iOrigListViewTop, ControlGetPos($g_hGUI, "", $g_idListView)[2], $g_iOrigListViewHeight)
+
+    ; Status zurücksetzen
+    $g_bSQLEditorMode = False
+
+    ; Hauptfenster aktualisieren, wenn eine Tabelle ausgewählt ist
+    Local $sSavedDB = $g_sCurrentDB
+    Local $sSavedTable = $g_sCurrentTable
+    Local $sTableBefore = GUICtrlRead($idTableCombo)
+
+    ; Daten neu laden, wenn nötig
+    If $sSavedDB <> "" And $sSavedTable <> "" And $sSavedTable = $sTableBefore Then
+        _OpenDatabaseFile($sSavedDB)
+        $g_sCurrentTable = $sSavedTable
+        GUICtrlSetData($idTableCombo, $sSavedTable, $sSavedTable)
+        _LoadDatabaseData()
+    EndIf
+
+    $g_bSQLExecutionLock = False  ; Sperre deaktivieren
+    Return True
+EndFunc
+
+; ===============================================================================================================================
+; Func.....: _ToggleSQLEditorMode
+; Beschreibung: Umschalten zwischen SQL-Editor-Modus und normalem Modus
+; Parameter.: $bActivate - True zum Aktivieren, False zum Deaktivieren
+; Rückgabe..: True bei Erfolg, sonst False
+; ===============================================================================================================================
+Func _ToggleSQLEditorMode($bActivate)
+    ; Umschalten des SQL-Editor-Modus
+    If $g_bSQLEditorMode = $bActivate Then Return True  ; Nichts zu tun
+
+    If $bActivate Then
+        Return _SQL_EditorEnter()
+    Else
+        Return _SQL_EditorExit()
+    EndIf
+EndFunc

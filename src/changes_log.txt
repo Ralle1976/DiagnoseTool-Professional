@@ -1,0 +1,129 @@
+===== Änderungsprotokoll: 26.04.2025 =====
+
+1) Problem: Der "Aktual."-Button setzt keine Filter im SQL Editor Modus zurück
+------------------------------------------------
+
+Angepasste Dateien:
+1. src_cleaned\lib\sql_editor_enhanced.au3
+   - Include für filter_functions.au3 hinzugefügt
+   - Event-Handler für den "Aktual."-Button (idBtnRefresh) überarbeitet:
+     * Prüfung auf aktiven Filter eingebaut
+     * Reset des Filters implementiert
+     * Ausführung des aktuellen SQL-Statements
+     * Verbesserte Statusmeldungen
+
+Neue Dateien:
+1. src_cleaned\README_AKTUAL_BUTTON_FIX.md
+   - Dokumentation des Problems und der Lösung
+   - Technische Details zur Implementierung
+   - Getestete Szenarien
+
+Funktionsweise nach Änderungen:
+- Der "Aktual."-Button setzt nun Filter sowohl im Hauptfenster als auch im SQL Editor Modus zurück
+- Nach dem Zurücksetzen des Filters werden alle Daten durch Ausführung des aktuellen SQL-Statements geladen
+- Dem Benutzer wird eine entsprechende Statusmeldung angezeigt
+
+Bemerkungen:
+- Diese Änderung verbessert die Benutzerfreundlichkeit, da der "Aktual."-Button nun in beiden Modi konsistent funktioniert
+- Die Implementierung nutzt bestehende Filter-Funktionen ohne den Code zu duplizieren
+
+
+2) Verbesserung: Tabellenwechsel im SQL Editor mit klarerer Rückmeldung
+------------------------------------------------
+
+Angepasste Dateien:
+1. src_cleaned\lib\sql_editor_enhanced.au3
+   - Event-Handler für Tabellenwechsel (g_idTableCombo, idTableCombo) verbessert:
+     * Klarere Statusmeldung, dass ein SQL-Statement generiert wurde
+     * Automatisches Setzen des Fokus auf das SQL-Editor-Feld
+     * Positionierung des Cursors am Ende des generierten SQL-Statements
+     * Kommentar "garantiert" zur Klarstellung der SQL-Statement-Generierung
+
+Funktionsweise nach Änderungen:
+- Beim Tabellenwechsel im SQL Editor wird weiterhin ein Standard-SQL-Statement generiert
+- Der Benutzer erhält eine klarere Rückmeldung über das generierte Statement
+- Der Fokus wird automatisch auf das SQL-Editor-Feld gesetzt, was die Benutzerfreundlichkeit erhöht
+- Ein Hinweis zur expliziten Ausführung des Statements wird angezeigt
+
+Bemerkungen:
+- Diese Verbesserung ändert nicht das grundlegende Verhalten, sondern macht es für den Benutzer transparenter
+- Die explizite Ausführung bleibt erforderlich, um das Konzept des SQL Editors beizubehalten
+
+
+3) Bugfix: RichEdit-Control zeigt kein SQL-Statement im SQL Editor an
+------------------------------------------------
+
+Angepasste Dateien:
+1. src_cleaned\lib\sql_editor_enhanced.au3
+   - Neue Funktion _SQL_SetInitialValue implementiert:
+     * Verwendet verschiedene Methoden, um SQL-Text im RichEdit-Control zu setzen
+     * Validiert, ob der Text korrekt gesetzt wurde
+     * Erstellt ein Backup des Textes für spätere Wiederherstellung
+
+   - Verbesserte Initialisierung in _InitPersistentSQLEditor:
+     * Explizite Speicherung des RichEdit-Handles
+     * Initialer Text wird bereits bei der Erstellung gesetzt
+     * Verbesserte Fehlerbehandlung
+
+   - Ergänzung im _TogglePersistentSQLEditor:
+     * Explizites Control-Sizing mit ControlMove
+     * Mehrfache Aufrufe von _SQL_SetInitialValue an kritischen Stellen
+     * Verbesserter Ablauf zur korrekten Textanzeige
+
+   - Überarbeitung des Event-Handlers für Tabellenwechsel:
+     * Verwendet neue _SQL_SetInitialValue Funktion
+     * Explizites Setzen der $g_sCurrentTable Variable vor dem Setzen des Textes
+     * Verbesserte Logausgaben zur besseren Nachverfolgung
+
+   - Globale Variablen für Control-Positionierung hinzugefügt:
+     * Neue globale Variablen $g_xCtrl, $g_yCtrl und $g_wCtrl
+     * Anpassung aller Funktionen zur korrekten Verwendung dieser Variablen
+     * Behebung von Kompilierungsfehlern wegen undefinierter Variablen
+
+Funktionsweise nach Änderungen:
+- Das RichEdit-Control zeigt nun zuverlässig das SQL-Statement für die ausgewählte Tabelle an
+- Die Größe des RichEdit-Controls wird korrekt gesetzt und beibehalten
+- Mehrere redundante Mechanismen stellen sicher, dass der Text unter allen Umständen angezeigt wird
+
+Technische Details:
+- Fehlerursache: Probleme mit der Synchronisation zwischen der Tabellenwahl und der Text-Anzeige
+- Lösung: Mehrere präzise Eingriffspunkte mit direkter Control-Manipulation
+- Kombination aus RichEdit-API und direkten Windows-API-Aufrufen für maximale Zuverlässigkeit
+
+Bemerkungen:
+- Diese Lösung behält die ursprüngliche Funktionalität bei und verbessert nur die Zuverlässigkeit
+- Die mehrfache Redundanz stellt sicher, dass der SQL-Text auch unter schwierigen Bedingungen angezeigt wird
+
+
+4) Bugfix: Button-Layout im SQL Editor korrigiert
+------------------------------------------------
+
+Angepasste Dateien:
+1. src_cleaned\lib\sql_editor_enhanced.au3
+   - Komplett überarbeitetes Button-Layout mit absoluten Positionen:
+     * Absolute X-Positionen für alle Buttons (statt relativer Positionierung)
+     * Angepasste Buttonbreiten (z.B. 120px für "Ausführen", 90px für "Speichern") 
+     * Bessere Verteilung im verfügbaren Raum
+
+   - RichEdit-Anpassungen:
+     * Höhe auf 150px reduziert (von 170px)
+     * Mehr Abstand zwischen Buttons und RichEdit-Control
+     * Speicherung der lokalen Y-Position in globaler Variable für konsistente Positionierung
+
+   - Korrektur der ControlMove-Funktion in _TogglePersistentSQLEditor:
+     * Verwendet korrekte Werte für Größe und Position
+     * Konsistente Höhenangabe in allen betroffenen Funktionen
+
+Funktionsweise nach Änderungen:
+- Die Buttons im SQL Editor werden mit korrekten Abständen angezeigt
+- Keine Überlappung oder falsche Positionierung mehr
+- Bessere visuelle Darstellung des gesamten SQL Editor Panels
+
+Technische Details:
+- Fehlerursache: Probleme mit der relativen Positionierung und Größenberechnung
+- Lösung: Direkte absolute Positionierung für alle Buttons
+- Verbesserung der Konsistenz zwischen Erstellungsparametern und Größenänderungen
+
+Bemerkungen:
+- Diese Änderung stellt das vom Benutzer erwartete Layout wieder her
+- Die verbesserte Positionierung sollte robuster gegen GUI-Änderungen sein

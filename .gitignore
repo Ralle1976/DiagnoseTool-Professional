@@ -1,0 +1,59 @@
+# AutoIT Compiled Files
+*.exe
+*.a3x
+
+# Log Files
+*.log
+debug.log
+diagnose.log
+error.log
+
+# Configuration Files (sensitive data) - NEVER COMMIT THESE!
+config.ini
+settings.ini
+*settings*.ini
+*.conf
+*.config
+
+# Backup Directories
+/backup/
+/backup_*/
+/temp/
+/logs/
+
+# Temporary Files
+*.tmp
+*.temp
+~*
+
+# Windows Thumbnails
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE Files
+*.workspace
+*.project
+.vscode/
+.idea/
+
+# Archive Files (development)
+*.zip
+*.rar
+*.7z
+
+# SQLite databases (if containing sensitive data)
+*.db3
+*.sqlite3
+
+# Personal Notes and Documentation
+*_personal.md
+*_notes.txt
+TODO_private.txt
+
+# System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes

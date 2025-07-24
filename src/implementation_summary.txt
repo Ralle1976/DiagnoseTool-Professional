@@ -1,0 +1,24 @@
+## Zusammenfassung der Implementierungsänderungen
+
+### 1. Problem: Kein Standard-SELECT bei Auswahl einer Tabelle im Editor-Modus
+Lösung:
+- In `main_robust.au3` wurde die Funktion für die Tabellenauswahl so angepasst, dass die sichere Methode `_ForceSetSQLText()` zum Setzen des SQL-Textes verwendet wird
+- In `sql_editor_enhanced.au3` wurde die Funktion für die Tabellenwechsel-Ereignisverarbeitung verbessert, um das SQL automatisch auszuführen, wenn eine neue Tabelle ausgewählt wird
+
+### 2. Problem: Autovervollständigung verschwindet nach Minimieren/Maximieren
+Lösung:
+- Event-Handler für Fenstereignisse hinzugefügt:
+  - `WM_ACTIVATEAPP`: Reagiert auf Aktivieren des Fensters und initialisiert die Autovervollständigung neu
+  - `WM_SIZE`: Reagiert auf Größenänderungen des Fensters
+  - `WM_WINDOWPOSCHANGED`: Reagiert auf Positionsänderungen des Fensters
+- Zusätzliche Fenster-Attribute hinzugefügt (`$WS_CLIPCHILDREN`) um Zeichenprobleme zu reduzieren
+
+### Zusätzliche Verbesserungen:
+- Verbesserte Fehlerbehandlung
+- Zuverlässigere Textmanipulation im RichEdit-Control
+- Automatische Ausführung des SQL-Statements beim Tabellenwechsel
+
+### Empfohlene weitere Verbesserungen:
+- Implementierung einer Timer-basierten Fehlerbehandlung für den Fall, dass Controls nicht korrekt angezeigt werden
+- Cache-Mechanismus für häufig verwendete SQL-Statements
+- Verbesserungen bei der Textmarkierung und Syntax-Highlighting für eine noch benutzerfreundlichere Oberfläche

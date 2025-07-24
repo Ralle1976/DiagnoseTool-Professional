@@ -1,0 +1,125 @@
+#include-once
+#include <WinAPI.au3>
+#include <WindowsConstants.au3>
+#include <ColorConstants.au3>
+#include <Misc.au3> ; Auskommentiert, da es zu Konflikten führt
+; ===============================================================================================================================
+; <ColorChooser.au3>
+; Funktionen für die erweiterte Farbauswahl.
+; ===============================================================================================================================
+
+; Definition der CHOOSECOLOR-Struktur
+;~ Global $tagCHOOSECOLOR = "dword Size;hwnd hWndOwner;hwnd hInstance;dword rgbResult;ptr CustomColors;dword Flags;lparam lCustData;ptr lpfnHook;ptr lpTemplateName"
+
+; Definition der Flaggen für ChooseColorW
+;~ Global Const $CC_RGBINIT = 0x00000001
+;~ Global Const $CC_FULLOPEN = 0x00000002
+;~ Global Const $CC_ANYCOLOR = 0x00000100
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _ChooseColorDialog
+; Description ...: Zeigt einen Windows-Farbauswahldialog an
+; Syntax ........: _ChooseColorDialog($iDefaultColor = 0xFFFFFF, $hWndOwner = 0, $iFlags = 0)
+; Parameters ....: $iDefaultColor - Standardfarbe (RGB-Wert).
+;                  $hWndOwner     - Handle des übergeordneten Fensters.
+;                  $iFlags        - Zusätzliche Flags für den Dialog.
+; Return values .: Erfolg - Die ausgewählte Farbe (RGB)
+;                  Fehler - -1 und setzt @error auf 1
+; Author ........: Diagnose-Tool Entwickler
+; Modified ......: 2025-03-22
+; ===============================================================================================================================
+Func _ChooseColorDialog($iDefaultColor = 0xFFFFFF, $hWndOwner = 0, $iFlags = 0)
+    ; Standardflags, wenn keine angegeben sind
+    If $iFlags = 0 Then
+        $iFlags = BitOR($CC_ANYCOLOR, $CC_FULLOPEN, $CC_RGBINIT)
+    EndIf
+
+    ; Struktur für benutzerdefinierten Farben
+    Local $tCustomColors = DllStructCreate("dword[16]")
+
+    ; Alle benutzerdefinierten Farben mit Weiß initialisieren
+    For $i = 0 To 15
+        DllStructSetData($tCustomColors, 1, 0xFFFFFF, $i + 1)
+    Next
+
+    ; CHOOSECOLOR-Struktur erstellen
+    Local $tChooseColor = DllStructCreate($tagCHOOSECOLOR)
+    DllStructSetData($tChooseColor, "Size", DllStructGetSize($tChooseColor))
+    DllStructSetData($tChooseColor, "hWndOwner", $hWndOwner)
+    DllStructSetData($tChooseColor, "rgbResult", $iDefaultColor)
+    DllStructSetData($tChooseColor, "CustomColors", DllStructGetPtr($tCustomColors))
+    DllStructSetData($tChooseColor, "Flags", $iFlags)
+
+    ; Direkte DllCall-Implementierung für ChooseColorW
+    Local $aResult = DllCall("comdlg32.dll", "bool", "ChooseColorW", "ptr", DllStructGetPtr($tChooseColor))
+    If @error Or Not $aResult[0] Then Return SetError(1, 0, -1)
+
+    ; Ausgewählte Farbe zurückgeben
+    Return DllStructGetData($tChooseColor, "rgbResult")
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GetColorName
+; Description ...: Gibt einen Farbnamen für einen RGB-Wert zurück
+; Syntax ........: _GetColorName($iColor)
+; Parameters ....: $iColor        - RGB Farbwert.
+; Return values .: Farbname als String
+; Author ........: Diagnose-Tool Entwickler
+; Modified ......: 2025-03-22
+; ===============================================================================================================================
+Func _GetColorName($iColor)
+    Local $iRed = BitAND(BitShift($iColor, 16), 0xFF)
+    Local $iGreen = BitAND(BitShift($iColor, 8), 0xFF)
+    Local $iBlue = BitAND($iColor, 0xFF)
+
+    ; Grundlegende Farberkennung
+    If $iRed > 200 And $iGreen < 100 And $iBlue < 100 Then
+        Return "Rot"
+    ElseIf $iRed > 200 And $iGreen > 150 And $iBlue < 100 Then
+        Return "Orange"
+    ElseIf $iRed > 200 And $iGreen > 200 And $iBlue < 100 Then
+        Return "Gelb"
+    ElseIf $iRed < 100 And $iGreen > 200 And $iBlue < 100 Then
+        Return "Grün"
+    ElseIf $iRed < 100 And $iGreen > 150 And $iBlue > 200 Then
+        Return "Cyan"
+    ElseIf $iRed < 100 And $iGreen < 100 And $iBlue > 200 Then
+        Return "Blau"
+    ElseIf $iRed > 150 And $iGreen < 100 And $iBlue > 200 Then
+        Return "Magenta"
+    ElseIf $iRed > 200 And $iGreen > 200 And $iBlue > 200 Then
+        Return "Weiß"
+    ElseIf $iRed < 100 And $iGreen < 100 And $iBlue < 100 Then
+        Return "Schwarz"
+    ElseIf Abs($iRed - $iGreen) < 30 And Abs($iRed - $iBlue) < 30 And Abs($iGreen - $iBlue) < 30 Then
+        Return "Grau"
+    EndIf
+
+    ; Fallback, wenn keine eindeutige Farbe erkannt wurde
+    Return "RGB(" & $iRed & "," & $iGreen & "," & $iBlue & ")"
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GetContrastColor
+; Description ...: Berechnet eine Kontrastfarbe (schwarz oder weiß) für optimale Lesbarkeit
+; Syntax ........: _GetContrastColor($iBackgroundColor)
+; Parameters ....: $iBackgroundColor - RGB-Hintergrundfarbe.
+; Return values .: Kontrastfarbe ($COLOR_BLACK oder $COLOR_WHITE)
+; Author ........: Diagnose-Tool Entwickler
+; Modified ......: 2025-03-22
+; ===============================================================================================================================
+Func _GetContrastColor($iBackgroundColor)
+    Local $iRed = BitAND(BitShift($iBackgroundColor, 16), 0xFF)
+    Local $iGreen = BitAND(BitShift($iBackgroundColor, 8), 0xFF)
+    Local $iBlue = BitAND($iBackgroundColor, 0xFF)
+
+    ; Berechnung der Luminanz nach W3C-Formel
+    Local $iLuminance = (0.299 * $iRed + 0.587 * $iGreen + 0.114 * $iBlue) / 255
+
+    ; Wenn die Luminanz hoch ist (heller Hintergrund), verwende schwarzen Text, sonst weißen
+    If $iLuminance > 0.5 Then
+        Return $COLOR_BLACK
+    Else
+        Return $COLOR_WHITE
+    EndIf
+EndFunc

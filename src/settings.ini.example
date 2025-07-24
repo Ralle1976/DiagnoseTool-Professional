@@ -1,0 +1,17 @@
+[ZIP]
+password=YOUR_PASSWORD_HERE
+[DATABASE]
+max_rows=1000
+[LogLevelColors]
+Info=0xFFEECC
+Schema=Benutzerdefiniert
+ERROR=0x7D64F7
+WARNING=0xFFCCCC
+DEBUG=0xCCFFCC
+TRACE=0xCCCCFF
+TRUNCATED=0xEEEEFF
+[GUI]
+auto_clear_temp=0
+auto_clear_logs=0
+[PATHS]
+extract_dir=C:\Users\%USERNAME%\AppData\Local\Temp\diagnose-tool\extracted

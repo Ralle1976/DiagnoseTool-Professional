@@ -1,0 +1,84 @@
+# Lösung für das SQL-Editor-Problem
+
+## Problembeschreibung
+Das Problem bestand darin, dass beim Auswählen einer Tabelle in der ComboBox SQL-Statements unabsichtlich mehrfach ausgeführt wurden, anstatt das erwartete Verhalten zu zeigen:
+
+1. Bei Auswahl einer Tabelle in der ComboBox:
+   - SQL-Statement erzeugen und EINMALIG direkt ausführen
+   - Das Statement in die EditBox schreiben für spätere Änderungen
+   
+2. Nachfolgende Ausführungen:
+   - NUR bei explizitem Klick auf "Ausführen (F5)" oder "Refresh"-Button
+   - Dabei wird der AKTUELLE Inhalt der EditBox ausgeführt
+
+## Durchgeführte Änderungen
+
+### 1. Überflüssige Komplexität entfernt
+- Die Variable `$g_bSQLExecutionLock` wurde entfernt, da sie zu Problemen führte
+- Die nicht mehr benötigte Variable `$g_bStatementLoaded` wurde entfernt
+- Der Code wurde stark vereinfacht, um ein klares Verhalten zu garantieren
+
+### 2. Klare Aufgabentrennung implementiert
+- **ComboBox-Auswahl**: Führt das SQL-Statement direkt aus und setzt danach den Text in die EditBox
+- **Ausführen-Button**: Liest den Inhalt der EditBox und führt NUR diesen aus
+- **Refresh-Button**: Verhält sich identisch zum Ausführen-Button
+
+### 3. Optimierungen
+- Bei Button-Klicks erfolgt kurzzeitige Deaktivierung, um versehentliches Mehrfachklicken zu verhindern
+- Verbesserte Log-Meldungen zur besseren Nachvollziehbarkeit
+- Einfacheres Syntax-Highlighting, das nicht vom Lock-Status abhängig ist
+
+## Wichtige Code-Änderungen
+
+1. **Tabellenauswahl**:
+```autoit
+Case $g_idSQLTableCombo
+    Local $sTable = GUICtrlRead($g_idSQLTableCombo)
+    If $sTable <> "" Then
+        _LogInfo("Tabelle ausgewählt: " & $sTable)
+        
+        ; SQL-Statement direkt ausführen
+        Local $sSQL = "SELECT * FROM " & $sTable & " LIMIT 100;"
+        Local $sDBPath = GUICtrlRead($g_idSQLDbCombo)
+        
+        If $sDBPath <> "" Then
+            _SQL_ExecuteQuery($sSQL, $sDBPath)
+            
+            ; Danach SQL-Statement in die EditBox schreiben
+            Local $sEditSQL = "-- Klicken Sie auf 'Ausführen (F5)', um diese Abfrage auszuführen" & @CRLF & @CRLF & $sSQL
+            _GUICtrlRichEdit_SetText($g_hSQLRichEdit, $sEditSQL)
+            $g_sCurrentTable = $sTable
+        EndIf
+    EndIf
+```
+
+2. **Ausführen-Button**:
+```autoit
+Case $g_idSQLExecuteBtn
+    ; SQL-Text aus der EditBox laden
+    Local $sSQL = _GUICtrlRichEdit_GetText($g_hSQLRichEdit)
+    Local $sDBPath = GUICtrlRead($g_idSQLDbCombo)
+    
+    ; Nur ausführen, wenn Button gedrückt wurde und SQL + DB vorhanden sind
+    If $sSQL <> "" And $sDBPath <> "" Then
+        _SQL_ExecuteQuery($sSQL, $sDBPath)
+        
+        ; Button kurzzeitig deaktivieren
+        GUICtrlSetState($g_idSQLExecuteBtn, $GUI_DISABLE)
+        Sleep(500)
+        GUICtrlSetState($g_idSQLExecuteBtn, $GUI_ENABLE)
+    EndIf
+```
+
+## Fazit
+Die durchgeführte Lösung stellt sicher, dass:
+
+1. Bei Tabellenauswahl:
+   - Ein SQL-Statement zum Anzeigen der Tabelle ausgeführt wird
+   - Der SQL-Text in die EditBox geschrieben wird
+
+2. Beim Klick auf "Ausführen" oder "Refresh":
+   - NUR der aktuelle Inhalt der EditBox ausgeführt wird
+   - Keine unbeabsichtigten Mehrfachausführungen stattfinden
+
+Diese Lösung entspricht genau den Anforderungen und ist deutlich einfacher zu verstehen und zu warten als die vorherige Implementierung.
